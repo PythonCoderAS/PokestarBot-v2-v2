@@ -1,0 +1,30 @@
+from tortoise import fields
+from tortoise.models import Model
+from typing import Optional
+from discord import Thread, TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel
+from .mixins import AuthorIdMixin, ChannelIdMixin
+from typing import Union
+
+
+class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
+    id = fields.IntField(pk=True)
+    guild_id = fields.BigIntField(null=True, index=True)
+    channel_id = fields.BigIntField(index=True, null=False)
+    thread_id = fields.BigIntField(null=True, index=True)
+    author_id = fields.BigIntField(null=False, index=True)
+    messages = fields.IntField(null=False, default=0)
+
+    class Meta:
+        unique_together = ("channel_id", "thread_id", "author_id")
+
+    @property
+    def thread(self) -> Optional[Thread]:
+        if self.thread_id:
+            return self.bot.get_thread(self.thread_id)
+        return None
+    
+    @property
+    def target_channel(self) -> Union[TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel, Thread]:
+        if self.thread_id:
+            return self.thread
+        return self.channel

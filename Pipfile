@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+aiohttp = {extras = ["speedups"], version = "*"}
+"discord.py" = {extras = ["speedup"], version = "*"}
+sentry-sdk = {extras = ["pure_eval"], version = "*"}
+tortoise-orm = {extras = ["accel", "asyncpg"], version = "*"}
+matplotlib = "*"
+jishaku = "*"
+
+[dev-packages]
+aerich = "*"
+
+[requires]
+python_version = "3.11"
