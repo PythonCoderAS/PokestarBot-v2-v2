@@ -2,10 +2,20 @@ from discord.ext.commands import Bot, when_mentioned
 from discord import Intents
 from pkgutil import iter_modules
 from pathlib import Path
-from importlib import import_module
 from .models import init as init_models
+from .models.mixins import BotMixin
+from typing import Optional, Self
 
 class PokestarBot(Bot):
+
+    bot: Optional["PokestarBot"] = None
+
+    def __new__(cls) -> Self:
+        if cls.bot is None:
+            cls.bot = super().__new__(cls)
+            BotMixin.bot = cls.bot
+        return cls.bot
+
     def __init__(self, *args, **kwargs):
         intents = Intents.default()
         intents.members = True
@@ -14,11 +24,9 @@ class PokestarBot(Bot):
 
     async def setup_hook(self):
         await init_models()
-        for module in iter_modules([Path(__file__).parent / "extensions"]):
+        for module in iter_modules([str(Path(__file__).parent / "extensions")]):
             try:
-                imported = import_module(f"{module.name}", package="src.extensions")
-                if hasattr(imported, "setup"):
-                    await self.load_extension(f"src.extensions.{module.name}")
+                await self.load_extension(f"src.extensions.{module.name}")
             except Exception as e:
                 print(f"Failed to load extension {module.name}: {e}")
         await self.load_extension("jishaku")

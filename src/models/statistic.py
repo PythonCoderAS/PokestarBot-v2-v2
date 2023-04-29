@@ -13,6 +13,8 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
     thread_id = fields.BigIntField(null=True, index=True)
     author_id = fields.BigIntField(null=False, index=True)
     messages = fields.IntField(null=False, default=0)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
         unique_together = ("channel_id", "thread_id", "author_id")
@@ -20,7 +22,7 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
     @property
     def thread(self) -> Optional[Thread]:
         if self.thread_id:
-            return self.bot.get_thread(self.thread_id)
+            return self.bot.get_channel(self.thread_id)
         return None
     
     @property
@@ -28,3 +30,9 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
         if self.thread_id:
             return self.thread
         return self.channel
+    
+    @property
+    def target_channel_id(self) -> int:
+        if self.thread_id:
+            return self.thread_id
+        return self.channel_id
