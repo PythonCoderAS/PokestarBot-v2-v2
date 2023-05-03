@@ -6,7 +6,7 @@ from discord import CategoryChannel, Guild, Interaction, Member, Embed, File, Me
 from collections import defaultdict
 from asyncio import Lock, Queue, create_task, Task
 from ..models.statistic import Statistic
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -16,11 +16,14 @@ from zoneinfo import ZoneInfo
 from ..singleton import SingletonClass
 
 NewYork = ZoneInfo("America/New_York")
+Months = Literal["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+MonthNamesToNum: dict[str, int] = {month: i for i, month in enumerate(Months.__args__, start=1)}
 
 def get_month_bucket_from_message(message: Message) -> date:
     return message.created_at.astimezone(NewYork).replace(day=1).date()
 
-SUPPORTED_CHANNEL_TYPES = Union[VoiceChannel, ForumChannel, TextChannel, Thread, StageChannel, DMChannel]
+SUPPORTED_COMMAND_CHANNEL_TYPES = Union[VoiceChannel, ForumChannel, TextChannel, Thread, StageChannel]
+SUPPORTED_CHANNEL_TYPES = Union[SUPPORTED_COMMAND_CHANNEL_TYPES, DMChannel]
 
 class StatisticsView(Group, name="view", description="View statistics information."):
     @staticmethod
@@ -30,7 +33,21 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         return interaction.guild_id is not None
     
     @staticmethod
-    async def validate_before_and_after_dates(interaction: Interaction, before_date: Optional[date], after_date: Optional[date]) -> bool:
+    async def validate_before_and_after_dates(interaction: Interaction, before_month: Optional[Months] = None, before_year: Optional[int] = None, after_month: Optional[Months] = None, after_year: Optional[int] = None) -> bool:
+        if (before_year, before_month).count(None) == 1:
+            await interaction.response.send_message("The `before_month` and `before_year` options must be used together.", ephemeral=True)
+            return False
+        elif (after_year, after_month).count(None) == 2:
+            before_date = None
+        else:
+            before_date = date(before_year, MonthNamesToNum[before_month], 1)
+        if (after_year, after_month).count(None) == 1:
+            await interaction.response.send_message("The `after_month` and `after_year` options must be used together.", ephemeral=True)
+            return False
+        elif (after_year, after_month).count(None) == 2:
+            after_date = None
+        else:
+            after_date = date(after_year, after_month, 1)
         if after_date and after_date > date.today():
             await interaction.response.send_message("The `after_date` option cannot be in the future.", ephemeral=True)
             return False
@@ -51,7 +68,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
     
 
     @command(name="user", description="View user statistics.")
-    async def user(self, interaction: Interaction, member: Optional[Member], top_channels: Range[int, 0, 25] = 10, graph_only: bool = False, include_threads: bool = True, combine_threads_into_parent: bool = False, before_date: Optional[date] = None, after_date: Optional[date] = None):
+    async def user(self, interaction: Interaction, member: Optional[Member], top_channels: Range[int, 0, 25] = 10, graph_only: bool = False, include_threads: bool = True, before_month: Optional[Months] = None, before_year: Optional[Range[int, 2015]] = None, after_month: Optional[Months] = None, after_year: Optional[Range[int, 2015]] = None):
         if member is None:
             member = interaction.user
             user_id = interaction.user.id
@@ -59,12 +76,13 @@ class StatisticsView(Group, name="view", description="View statistics informatio
             if not await self.validate_guild_only(interaction, "The `member` option can only be used in a server."):
                 return
             user_id = member.id
-        if combine_threads_into_parent:
-            include_threads = True
-        if (include_threads or combine_threads_into_parent) and not await self.validate_guild_only(interaction, "The `include_threads` and `combine_threads_into_parent` options can only be used in a server."):
+        if include_threads and not await self.validate_guild_only(interaction, "The `include_threads` options can only be used in a server."):
                 return
-        if not await self.validate_before_and_after_dates(interaction, before_date, after_date):
+        if not await self.validate_before_and_after_dates(interaction, before_month, before_year, after_month, after_year):
             return
+        else:
+            before_date = date(before_year, MonthNamesToNum[before_month], 1)
+            after_date = date(after_year, after_month, 1)
         if not await self.validate_graph_options(interaction, graph_only, top_channels, "top_channels"):
             return
         await interaction.response.defer(thinking=True)
@@ -75,12 +93,8 @@ class StatisticsView(Group, name="view", description="View statistics informatio
             base = base.filter(month__gte=after_date)
         if not include_threads:
             base = base.filter(thread_id=None)
-        if combine_threads_into_parent:
-            base = base.group_by("guild_id", "channel_id", "author_id")
-            values = base.values("guild_id", "channel_id", "thread_id", "author_id", messages="total_messages")
-        else:
-            base = base.group_by("guild_id", "channel_id", "thread_id", "author_id")
-            values = base.values("guild_id", "channel_id", "thread_id", "author_id", messages="total_messages")
+        base = base.group_by("guild_id", "channel_id", "thread_id", "author_id")
+        values = base.values("guild_id", "channel_id", "thread_id", "author_id", messages="total_messages")
         stats = [Statistic(**value) async for value in values]
         total = sum([stat.messages for stat in stats])
         buf = BytesIO()
@@ -115,21 +129,31 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         await interaction.followup.send(embed=embed, files=[File(buf, filename="graph.png", description="A graph of the top channels the user commented in")] if made_graph else [])
 
     @command(name="channel", description="View channel statistics.")
-    async def channel(self, interaction: Interaction, channel: Optional[SUPPORTED_CHANNEL_TYPES], top_users: Range[int, 0, 25] = 10, graph_only: bool = False, include_threads: bool = False, combine_threads_into_parent: bool = False, before_date: Optional[date] = None, after_date: Optional[date] = None):
+    async def channel(self, interaction: Interaction, channel: Optional[SUPPORTED_COMMAND_CHANNEL_TYPES], top_users: Range[int, 0, 25] = 10, graph_only: bool = False, include_threads: bool = False, before_month: Optional[Months] = None, before_year: Optional[Range[int, 2015]] = None, after_month: Optional[Months] = None, after_year: Optional[Range[int, 2015]] = None):
         if channel is None:
             channel = interaction.channel
             channel_id = interaction.channel.id
         else:
             channel_id = channel.id
-        if combine_threads_into_parent:
-            include_threads = True
-        if (include_threads or combine_threads_into_parent) and not await self.validate_guild_only(interaction, "The `include_threads` and `combine_threads_into_parent` options can only be used in a server."):
+        if include_threads and not await self.validate_guild_only(interaction, "The `include_threads` options can only be used in a server."):
                 return
-        if not await self.validate_before_and_after_dates(interaction, before_date, after_date):
+        if not await self.validate_before_and_after_dates(interaction, before_month, before_year, after_month, after_year):
             return
+        if before_month:
+            # We only need to check the month since the validator will check to make sure the year exists as well
+            before_date = date(before_year, MonthNamesToNum[before_month], 1)
+        else:
+            before_date = None
+        if after_month:
+            after_date = date(after_year, after_month, 1)
+        else:
+            after_date = None
         if not await self.validate_graph_options(interaction, graph_only, top_users, "top_users"):
             return
         await interaction.response.defer(thinking=True)
+        if isinstance(channel, Thread):
+            include_threads = False
+            base = Statistic.filter(channel_id=, guild_id=interaction.guild_id)
         base = Statistic.filter(channel_id=channel_id, guild_id=interaction.guild_id).order_by("-messages").annotate(total_messages=Sum("messages"))
         if before_date:
             base = base.filter(month__lte=before_date)
@@ -137,19 +161,18 @@ class StatisticsView(Group, name="view", description="View statistics informatio
             base = base.filter(month__gte=after_date)
         if not include_threads:
             base = base.filter(thread_id=None)
-        if combine_threads_into_parent:
-            base = base.group_by("guild_id", "channel_id", "author_id")
-            values = base.values("guild_id", "channel_id", "thread_id", "author_id", messages="total_messages")
-        else:
-            base = base.group_by("guild_id", "channel_id", "thread_id", "author_id")
-            values = base.values("guild_id", "channel_id", "thread_id", "author_id", messages="total_messages")
+        base = base.group_by("guild_id", "channel_id", "thread_id", "author_id")
+        values = base.values("guild_id", "channel_id", "thread_id", "author_id", messages="total_messages")
         stats = [Statistic(**value) async for value in values]
         total = sum([stat.messages for stat in stats])
         buf = BytesIO()
         made_graph = False
         if not (top_users <= 0 or not interaction.guild_id):
             graph_stats = stats[:top_users]
-            names = [self.statistics.bot.get_user(stat.author_id).display_name for stat in graph_stats]
+            names = []
+            for stat in graph_stats:
+                user = interaction.guild.get_member(stat.author_id)
+                names.append(user.display_name if user else "Unknown User")
             counts = [stat.messages for stat in graph_stats]
             fig, ax = plt.subplots()
             ax.barh(names, counts)
@@ -165,10 +188,14 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         if graph_only:
             return await interaction.followup.send(files=[File(buf, filename="graph.png", description="A graph of the top users in the channel")])
         embed = Embed(title=f"Statistics for {channel.name}", description=f"Total messages: **{total:,}**\n")
-        guild = interaction.guild
         for stat in stats[:50]: # Limit to 50 users listed so we do not go over the embed character limit
-            embed.description += f"**{guild.get_member()}**: {stat.messages:,}\n"
+            user = interaction.guild.get_member(stat.author_id)
+            embed.description += f"**{user.mention if user else 'Unknown User'}**: {stat.messages:,}\n"
+        if made_graph:
+            embed.set_image(url="attachment://graph.png")
+        await interaction.followup.send(embed=embed, files=[File(buf, filename="graph.png", description="A graph of the top channels the user commented in")] if made_graph else [])
 
+    
 class StatisticsRecalculate(Group, name="recalculate", description="Recalculate statistics information."):
     RECALCULATION_LOG_CHANNEL = 1102585915840397363
     statistics: Optional["Statistics"] = None
@@ -243,7 +270,7 @@ class StatisticsRecalculate(Group, name="recalculate", description="Recalculate 
                     self.queue.put_nowait(thread)
 
     @command(name="channel", description="Recalculate channel statistics.")
-    async def channel(self, interaction: Interaction, channel: Optional[Union[VoiceChannel, ForumChannel, TextChannel, Thread, StageChannel]] = None, include_threads: bool = True, only_threads: bool = False):
+    async def channel(self, interaction: Interaction, channel: Optional[SUPPORTED_COMMAND_CHANNEL_TYPES] = None, include_threads: bool = True, only_threads: bool = False):
         bot: Bot = interaction.client
         if only_threads:
             include_threads = True
@@ -258,12 +285,16 @@ class StatisticsRecalculate(Group, name="recalculate", description="Recalculate 
         
 
     @command(name="guild", description="Recalculate guild statistics.")
-    async def guild(self, interaction: Interaction, guild: Optional[Guild] = None, include_threads: bool = True, only_threads: bool = False):
+    async def guild(self, interaction: Interaction, guild_id: Optional[int] = None, include_threads: bool = True, only_threads: bool = False):
         bot: Bot = interaction.client
         if not await bot.is_owner(interaction.user):
             return await interaction.response.send_message("Only the bot owner can use this command.", ephemeral=True)
-        if guild is None:
+        if guild_id is None:
             guild = interaction.guild
+        else:
+            guild = bot.get_guild(guild_id)
+        if guild is None:
+            return await interaction.response.send_message("Guild not found.", ephemeral=True)
         await interaction.response.send_message(f"Queued recalculation for {guild.name}.", ephemeral=True)
         for channel in guild.channels:
             if isinstance(channel, CategoryChannel):
