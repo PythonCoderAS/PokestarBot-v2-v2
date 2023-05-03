@@ -13,11 +13,10 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
     thread_id = fields.BigIntField(null=True, index=True)
     author_id = fields.BigIntField(null=False, index=True)
     messages = fields.IntField(null=False, default=0)
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
+    month = fields.DateField(null=False, index=True)
 
     class Meta:
-        unique_together = ("channel_id", "thread_id", "author_id")
+        unique_together = ("channel_id", "thread_id", "author_id", "month")
 
     @property
     def thread(self) -> Optional[Thread]:
