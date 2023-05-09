@@ -15,6 +15,7 @@ TORTOISE_ORM = {
     "maxsize": 20,
 }
 
+
 async def init():
     """Initialize the ORM."""
     await Tortoise.init(TORTOISE_ORM)

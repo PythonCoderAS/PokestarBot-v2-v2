@@ -1,7 +1,15 @@
 from tortoise import fields
 from tortoise.models import Model
 from typing import Optional
-from discord import Thread, TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel
+from discord import (
+    Thread,
+    TextChannel,
+    CategoryChannel,
+    VoiceChannel,
+    ForumChannel,
+    StageChannel,
+    DMChannel,
+)
 from .mixins import AuthorIdMixin, ChannelIdMixin
 from typing import Union
 
@@ -23,13 +31,15 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
         if self.thread_id:
             return self.bot.get_channel(self.thread_id)
         return None
-    
+
     @property
-    def target_channel(self) -> Union[TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel, Thread]:
+    def target_channel(
+        self,
+    ) -> Union[TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel, Thread,]:
         if self.thread_id:
             return self.thread
         return self.channel
-    
+
     @property
     def target_channel_id(self) -> int:
         if self.thread_id:

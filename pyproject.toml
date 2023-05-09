@@ -2,3 +2,6 @@
 tortoise_orm = "models.__init__.TORTOISE_ORM"
 location = "./src/migrations"
 src_folder = "./src"
+
+[tool.black]
+line-length = 120

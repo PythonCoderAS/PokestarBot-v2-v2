@@ -13,6 +13,8 @@ jishaku = "*"
 
 [dev-packages]
 aerich = "*"
+black = "*"
+isort = "*"
 
 [requires]
 python_version = "3.11"

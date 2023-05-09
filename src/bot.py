@@ -6,8 +6,8 @@ from .models import init as init_models
 from .models.mixins import BotMixin
 from .singleton import SingletonClass
 
-class PokestarBot(Bot, SingletonClass):
 
+class PokestarBot(Bot, SingletonClass):
     def __init__(self, *args, **kwargs):
         intents = Intents.default()
         intents.members = True
@@ -22,4 +22,3 @@ class PokestarBot(Bot, SingletonClass):
         for module in iter_modules([str(Path(__file__).parent / "extensions")]):
             await self.load_extension(f"src.extensions.{module.name}")
         await self.load_extension("jishaku")
-

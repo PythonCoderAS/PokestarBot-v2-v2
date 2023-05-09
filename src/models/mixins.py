@@ -10,7 +10,7 @@ from discord import (
     User,
     VoiceChannel,
     ForumChannel,
-    StageChannel
+    StageChannel,
 )
 from tortoise import fields
 
@@ -26,7 +26,7 @@ class ChannelIdMixin(BotMixin):
     @property
     def channel(
         self,
-    ) -> Optional[Union[TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel]]:
+    ) -> Optional[Union[TextChannel, CategoryChannel, VoiceChannel, ForumChannel, StageChannel, DMChannel,]]:
         if self.channel_id:
             return self.bot.get_channel(self.channel_id)
         return None
@@ -51,7 +51,7 @@ class AuthorIdMixin(BotMixin):
         if self.author_id:
             return guild.get_member(self.author_id) or self.bot.get_user(self.author_id)
         return None
-    
+
     def get_user(self) -> Optional[User]:
         if self.author_id:
             return self.bot.get_user(self.author_id)
@@ -70,7 +70,8 @@ class RoleMixin(BotMixin):
         if self.role_id:
             return guild.get_role(self.role_id)
         return None
-    
+
+
 class GuildIdMixin(BotMixin):
     @property
     def guild(self) -> Optional[Guild]:
