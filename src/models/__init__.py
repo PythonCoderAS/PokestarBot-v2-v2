@@ -3,7 +3,7 @@ from .statistic import Statistic
 
 TORTOISE_ORM = {
     "connections": {
-        "default": "postgres://pokestarbot@localhost/pokestarbot",
+        "default": "postgres://pokestarbot:pokestarbot@localhost/pokestarbot",
     },
     "apps": {
         "models": {
