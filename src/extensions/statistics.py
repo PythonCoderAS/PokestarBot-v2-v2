@@ -627,7 +627,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
                                          thread.is_private() and interaction.user.id in [member.id for member in
                                                                                          thread.members]}
         if show_archived_private_threads and not show_all_private_threads:
-            async for thread in channel.archived_threads(private=True, joined=True):
+            async for thread in channel.archived_threads(private=True, limit=None, joined=not channel.permissions_for(channel.guild.me).manage_threads):
                 if interaction.user.id in [member.id for member in thread.members]:
                     valid_private_thread_ids.add(thread.id)
         base = (
@@ -1121,12 +1121,10 @@ class StatisticsRecalculate(Group, name="recalculate", description="Recalculate 
             if isinstance(channel, TextChannel):
                 async for thread in channel.archived_threads(limit=None, private=False):
                     self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
-                if interaction.app_permissions.manage_threads:
-                    async for thread in channel.archived_threads(limit=None, private=True):
-                        self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
-                else:
-                    async for thread in channel.archived_threads(limit=None, private=True, joined=True):
-                        self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
+                async for thread in channel.archived_threads(limit=None, private=True,
+                                                             joined=not channel.permissions_for(
+                                                                     channel.guild.me).manage_threads):
+                    self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
             else:
                 async for thread in channel.archived_threads(limit=None):
                     self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
