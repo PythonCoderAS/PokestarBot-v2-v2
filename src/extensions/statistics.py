@@ -1103,6 +1103,9 @@ class StatisticsRecalculate(Group, name="recalculate", description="Recalculate 
         only_threads: bool = False,
         since_last: bool = False,
     ):
+        perms = channel.permissions_for(channel.guild.me)
+        if not (perms.view_channel and perms.read_message_history):
+            return
         if isinstance(channel, ForumChannel):
             include_threads = True
         else:
