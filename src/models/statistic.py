@@ -33,6 +33,10 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
     """is_private is only used for threads. It is None for non-threads."""
     last_updated = fields.DatetimeField(null=False, auto_now=True)
 
+    # Fake fields
+    sum: int
+    agg_count: int # Number of statistics units aggregated into this one, not counting itself
+
     class Meta:
         unique_together = ("channel_id", "thread_id", "author_id", "month")
 
