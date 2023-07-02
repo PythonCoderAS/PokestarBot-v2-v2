@@ -4,6 +4,7 @@ from discord import (
     Thread,
     DMChannel,
 )
+from tortoise.queryset import QuerySet
 
 from .errors import ValidationError
 from ..shared import SUPPORTED_CHANNEL_TYPES
@@ -45,6 +46,11 @@ class LimitedPrivateMode(Enum):
     ephemeral = auto()
     ephemeral_only_if_private = auto()
     show = auto()
+    aggregate_all = auto()
+
+ALL_PRIVATE_AGGREGATE = [PrivateMode.aggregate]
+ALL_TOTAL_AGGREGATE = [PrivateMode.aggregate_all, LimitedPrivateMode.aggregate_all]
+ALL_AGGREGATE = [PrivateMode.aggregate, PrivateMode.aggregate_all, LimitedPrivateMode.aggregate_all]
 
 
 class BotModes(Enum):
@@ -267,13 +273,13 @@ def aggregate_threads(stats: list[dict], condition: Callable[[dict], bool]=lambd
 def format_stat(stat_value: int, statistic: StatisticMode):
     return f"**{stat_value:,}**{' (**' + format_byte_string(stat_value) + '**)' if statistic == StatisticMode.characters and stat_value > 1024 else ''}"
 
-def format_stat_graph_name(stat: Statistic, private_mode: PrivateMode) -> str:
+def format_stat_graph_name(stat: Statistic, private_mode: PrivateMode | LimitedPrivateMode) -> str:
     if stat.target_channel is None:
         return "Deleted/unknown channel or thread"
-    elif stat.thread_id is not None and (((private_mode == PrivateMode.aggregate and is_private_stat(stat))) or (private_mode == PrivateMode.aggregate_all)):
-        if ((private_mode == PrivateMode.aggregate and is_private_stat(stat))):
+    elif stat.thread_id is not None and (((private_mode in ALL_PRIVATE_AGGREGATE and is_private_stat(stat))) or (private_mode in ALL_TOTAL_AGGREGATE)):
+        if ((private_mode in ALL_PRIVATE_AGGREGATE and is_private_stat(stat))):
             return "All private threads in #" + stat.channel.name
-        elif (private_mode == PrivateMode.aggregate_all):
+        elif (private_mode in ALL_TOTAL_AGGREGATE):
             return "All threads in #" + stat.channel.name
         else:
             raise ValueError(f"Invalid set of options: {(stat.thread_id, private_mode)!r}")
@@ -282,10 +288,17 @@ def format_stat_graph_name(stat: Statistic, private_mode: PrivateMode) -> str:
     else:
         return "Private channel or thread"
 
-def format_stat_embed_label(stat: Statistic, private_mode: PrivateMode) -> str:
+def format_stat_embed_label(stat: Statistic, private_mode: PrivateMode | LimitedPrivateMode) -> str:
     if stat.thread_id:
-        if stat.is_private and private_mode == PrivateMode.aggregate:
+        if stat.is_private and private_mode in ALL_PRIVATE_AGGREGATE:
             return f"All private threads in <#{stat.channel_id}>"
-        elif private_mode == PrivateMode.aggregate_all:
+        elif private_mode in ALL_TOTAL_AGGREGATE:
             return f"All threads in <#{stat.channel_id}>"
     return f"<#{stat.target_channel_id}>"
+
+def filter_bot_mode(queryset: QuerySet[Statistic], bots: BotModes) -> QuerySet[Statistic]:
+    if bots == BotModes.exclude:
+        queryset = queryset.filter(is_bot=False)
+    elif bots == BotModes.only:
+        queryset = queryset.filter(is_bot=True)
+    return queryset

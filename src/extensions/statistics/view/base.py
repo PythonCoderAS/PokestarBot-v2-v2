@@ -8,7 +8,7 @@ from tortoise.queryset import QuerySet, ValuesQuery
 
 from ....models import Statistic
 from .shared import Months, StatisticMode, parse_date_options, make_bar_graph, is_private_stat, PrivateMode, \
-    LimitedPrivateMode, is_ephemeral, aggregate_threads
+    LimitedPrivateMode, is_ephemeral, aggregate_threads, ALL_PRIVATE_AGGREGATE, ALL_AGGREGATE
 from .errors import ValidationError
 
 
@@ -66,8 +66,8 @@ class BaseStatisticsViewHandler(ABC):
         queryset = self.get_queryset(before_date=before_date, after_date=after_date)
         stats = []
         values = [value async for value in queryset]
-        if self.private_mode in [PrivateMode.aggregate, PrivateMode.aggregate_all]:
-            condition = (lambda item: item["is_private"]) if self.private_mode == PrivateMode.aggregate else (lambda item: True)
+        if self.private_mode in ALL_AGGREGATE:
+            condition = (lambda item: item["is_private"]) if self.private_mode in ALL_PRIVATE_AGGREGATE else (lambda item: True)
             values = aggregate_threads(values, condition=condition)
         for value in values:
             stat = Statistic(**value)

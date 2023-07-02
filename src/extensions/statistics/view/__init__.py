@@ -21,6 +21,7 @@ from discord import (
 from .shared import PrivateMode, StatisticMode, Months, validate_graph_options, validate_guild_only, parse_date_options, \
     BotModes, LimitedPrivateMode
 from .user import UserHandler
+from .channel import ChannelHandler
 from ..shared import SUPPORTED_CHANNEL_TYPES, SUPPORTED_COMMAND_CHANNEL_TYPES
 from ....models.statistic import Statistic
 from typing import Optional, Union, cast
@@ -60,107 +61,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         after_year: Optional[Range[int, 2015]] = None,
         statistic: StatisticMode = StatisticMode.messages,
     ):
-        if channel is None:
-            channel = interaction.channel
-            channel_id = interaction.channel.id
-        else:
-            channel_id = channel.id
-            if not channel.permissions_for(interaction.user).view_channel:
-                return await interaction.response.send_message(
-                    "You do not have permission to view that channel.", ephemeral=True
-                )
-        if include_threads and not await validate_guild_only(
-            interaction, "The `include_threads` options can only be used in a server."
-        ):
-            return
-        date_valid, (before_date, after_date) = await parse_date_options(
-            interaction, before_month, before_year, after_month, after_year
-        )
-        if not date_valid:
-            return
-        if not await validate_graph_options(interaction, graph_only, top_users, "top_users"):
-            return
-        await interaction.response.defer(thinking=True)
-        if isinstance(channel, Thread):
-            include_threads = True
-            base = Statistic.filter(channel_id=channel.parent.id, thread_id=channel.id, guild_id=interaction.guild_id)
-        else:
-            base = Statistic.filter(channel_id=channel_id, guild_id=interaction.guild_id)
-        base = base.annotate(sum=Sum(statistic.field_name())).order_by("-sum")
-        if before_date:
-            base = base.filter(month__lte=before_date)
-        if after_date:
-            base = base.filter(month__gte=after_date)
-        if bots == BotModes.exclude:
-            base = base.filter(is_bot=False)
-        elif bots == BotModes.only:
-            base = base.filter(is_bot=True)
-        if not include_threads:
-            base = base.filter(thread_id=None)
-        base = base.group_by("guild_id", "channel_id", "thread_id", "author_id")
-        values = base.values(
-            "guild_id",
-            "channel_id",
-            "thread_id",
-            "author_id",
-            "sum",
-        )
-        stats = []
-        async for value in values:
-            stat = Statistic(**value)
-            stat.sum = int(value["sum"])
-            stats.append(stat)
-        total = sum([stat.sum for stat in stats])
-        buf = None
-        if top_users > 0:
-            graph_stats = stats[:top_users]
-            names = []
-            for stat in graph_stats:
-                user = interaction.guild.get_member(stat.author_id)
-                names.append(user.display_name if user else "Unknown User")
-            counts = [stat.sum for stat in graph_stats]
-            buf = make_bar_graph(
-                names, counts, f"{statistic.title_word()} sent in {channel.name}", "User", statistic.label()
-            )
-        assert (
-            not graph_only
-            or buf
-            # Represents "if graph only, then a graph must be made" (p->q)
-        ), "Somehow requested graph only but no graph was made."
-        has_at_least_one_private_channel = next((is_private_stat(stat) for stat in stats), None) is not None
-        if graph_only:
-            return await interaction.followup.send(
-                files=[
-                    File(
-                        buf,
-                        filename="graph.png",
-                        description="A graph of the top users in the channel",
-                    )
-                ],
-                ephemeral=is_ephemeral(private_mode, has_at_least_one_private_channel),
-            )
-        embed = Embed(
-            title=f"Statistics for {channel.name}",
-            description=f"Total {statistic.title_word().lower()}: **{total:,}**{' (**' + format_byte_string(total) + '**)' if statistic == StatisticMode.characters and total > 1024 else ''}\n",
-        )
-        for stat in stats[:50]:  # Limit to 50 users listed so we do not go over the embed character limit
-            user = interaction.guild.get_member(stat.author_id)
-            embed.description += f"**{user.mention if user else 'Unknown User'}**: {stat.sum:,}{' (' + format_byte_string(stat.sum) + ')' if statistic == StatisticMode.characters and stat.sum > 1024 else ''}\n"
-        if buf:
-            embed.set_image(url="attachment://graph.png")
-        await interaction.followup.send(
-            embed=embed,
-            files=[
-                File(
-                    buf,
-                    filename="graph.png",
-                    description="A graph of the top channels the user commented in",
-                )
-            ]
-            if buf
-            else [],
-            ephemeral=is_ephemeral(private_mode, has_at_least_one_private_channel),
-        )
+        return await ChannelHandler(interaction, channel=channel, top_users=top_users, graph_only=graph_only, include_threads=include_threads, bots=bots, private_mode=private_mode, before_month=before_month, before_year=before_year, after_month=after_month, after_year=after_year, statistic=statistic).run()
 
     @command(name="threads", description="View statistics for threads in a channel.")
     async def threads(
