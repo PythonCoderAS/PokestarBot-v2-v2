@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from time import monotonic
 from traceback import print_exception
 from asyncio import Queue, create_task, Task, wait_for
-from discord.ext.commands import  Bot
+from discord.ext.commands import Bot
 from discord.app_commands import Group, command
 from discord import (
     CategoryChannel,
@@ -20,8 +20,13 @@ from collections import defaultdict
 from ...models.statistic import Statistic
 from typing import Optional
 
-from .shared import SUPPORTED_CHANNEL_TYPES, get_month_bucket_from_message, NewYork, is_private_thread, \
-    SUPPORTED_COMMAND_CHANNEL_TYPES
+from .shared import (
+    SUPPORTED_CHANNEL_TYPES,
+    get_month_bucket_from_message,
+    NewYork,
+    is_private_thread,
+    SUPPORTED_COMMAND_CHANNEL_TYPES,
+)
 
 
 @dataclass
@@ -165,9 +170,9 @@ class StatisticsRecalculate(Group, name="recalculate", description="Recalculate 
             if isinstance(channel, TextChannel):
                 async for thread in channel.archived_threads(limit=None, private=False):
                     self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
-                async for thread in channel.archived_threads(limit=None, private=True,
-                                                             joined=not channel.permissions_for(
-                                                                     channel.guild.me).manage_threads):
+                async for thread in channel.archived_threads(
+                    limit=None, private=True, joined=not channel.permissions_for(channel.guild.me).manage_threads
+                ):
                     self.queue.put_nowait(RecalculateTask(thread, since_last=since_last))
             else:
                 async for thread in channel.archived_threads(limit=None):

@@ -35,7 +35,7 @@ class Statistic(AuthorIdMixin, ChannelIdMixin, Model):
 
     # Fake fields
     sum: int
-    agg_count: int # Number of statistics units aggregated into this one, not counting itself
+    agg_count: int  # Number of statistics units aggregated into this one, not counting itself
 
     class Meta:
         unique_together = ("channel_id", "thread_id", "author_id", "month")

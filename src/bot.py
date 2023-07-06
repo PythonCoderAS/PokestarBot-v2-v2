@@ -20,12 +20,13 @@ class PokestarBot(Bot, SingletonClass):
         BotMixin.bot = self
 
         self.slash_command_error = self.tree.error(self.slash_command_error)
+
     async def slash_command_error(self, interaction: Interaction, error: AppCommandError):
         if interaction.response.is_done():
             method = interaction.followup.send
         else:
             method = interaction.response.send_message
-        if not self.is_owner(interaction.user):
+        if not await self.is_owner(interaction.user):
             await method("An error has occured! Ask the bot operator for help.", ephemeral=True)
         else:
             if isinstance(error, CommandInvokeError):
@@ -36,9 +37,12 @@ class PokestarBot(Bot, SingletonClass):
             if len(traceback_text) > 4096:
                 await method("An error has occured and the traceback is too large to send back.", ephemeral=True)
             else:
-                await method("An error has occured!",embeds=[Embed(title="Traceback", description=traceback_text)], ephemeral=True)
+                await method(
+                    "An error has occured!",
+                    embeds=[Embed(title="Traceback", description=traceback_text)],
+                    ephemeral=True,
+                )
         print_exception(printed_error)
-
 
     async def setup_hook(self):
         await init_models()

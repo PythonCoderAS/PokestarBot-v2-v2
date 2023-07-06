@@ -1,4 +1,3 @@
-
 from discord.ext.commands import GroupCog, Bot
 
 from discord import (
@@ -13,7 +12,6 @@ from .shared import get_month_bucket_from_message
 from .view import StatisticsView
 from .view.shared import is_private
 from ...models.statistic import Statistic
-
 
 
 class Statistics(GroupCog, group_name="statistics", description="View statistics information."):

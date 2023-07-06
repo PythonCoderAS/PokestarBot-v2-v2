@@ -18,10 +18,20 @@ from discord import (
     User,
 )
 
-from .shared import PrivateMode, StatisticMode, Months, validate_graph_options, validate_guild_only, parse_date_options, \
-    BotModes, LimitedPrivateMode
+from .shared import (
+    PrivateMode,
+    StatisticMode,
+    Months,
+    validate_graph_options,
+    validate_guild_only,
+    parse_date_options,
+    BotModes,
+    LimitedPrivateMode,
+    is_private_stat,
+)
 from .user import UserHandler
 from .channel import ChannelHandler
+from .threads import ThreadsHandler
 from ..shared import SUPPORTED_CHANNEL_TYPES, SUPPORTED_COMMAND_CHANNEL_TYPES
 from ....models.statistic import Statistic
 from typing import Optional, Union, cast
@@ -43,8 +53,23 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         after_month: Optional[Months] = None,
         after_year: Optional[Range[int, 2015]] = None,
         statistic: StatisticMode = StatisticMode.messages,
+        hidden: bool = False,
     ):
-        return await UserHandler(interaction, member=member, top_channels=top_channels, graph_only=graph_only, include_threads=include_threads, private_mode=private_mode, before_month=before_month, before_year=before_year, after_month=after_month, after_year=after_year, statistic=statistic).run()
+        return await UserHandler(
+            interaction,
+            member=member,
+            top_channels=top_channels,
+            graph_only=graph_only,
+            include_threads=include_threads,
+            private_mode=private_mode,
+            before_month=before_month,
+            before_year=before_year,
+            after_month=after_month,
+            after_year=after_year,
+            statistic=statistic,
+            hidden=hidden,
+        ).run()
+
     @command(name="channel", description="View channel statistics.")
     async def channel(
         self,
@@ -60,18 +85,31 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         after_month: Optional[Months] = None,
         after_year: Optional[Range[int, 2015]] = None,
         statistic: StatisticMode = StatisticMode.messages,
+        hidden: bool = False,
     ):
-        return await ChannelHandler(interaction, channel=channel, top_users=top_users, graph_only=graph_only, include_threads=include_threads, bots=bots, private_mode=private_mode, before_month=before_month, before_year=before_year, after_month=after_month, after_year=after_year, statistic=statistic).run()
+        return await ChannelHandler(
+            interaction,
+            channel=channel,
+            top_users=top_users,
+            graph_only=graph_only,
+            include_threads=include_threads,
+            bots=bots,
+            private_mode=private_mode,
+            before_month=before_month,
+            before_year=before_year,
+            after_month=after_month,
+            after_year=after_year,
+            statistic=statistic,
+            hidden=hidden,
+        ).run()
 
-    @command(name="threads", description="View statistics for threads in a channel.")
-    async def threads(
+    @command(name="active_threads", description="View statistics for active threads in a channel.")
+    async def active_threads(
         self,
         interaction: Interaction,
         channel: Optional[Union[TextChannel, ForumChannel]] = None,
         top_threads: Range[int, 0, 25] = 10,
         graph_only: bool = False,
-        show_archived_private_threads: bool = False,
-        show_all_private_threads: bool = False,
         private_mode: PrivateMode = PrivateMode.hide_name,
         bots: BotModes = "exclude",
         before_month: Optional[Months] = None,
@@ -79,144 +117,22 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         after_month: Optional[Months] = None,
         after_year: Optional[Range[int, 2015]] = None,
         statistic: StatisticMode = StatisticMode.messages,
+        hidden: bool = False,
     ):
-        """
-        View statistics for threads in a channel.
-        """
-        if channel is None:
-            channel = interaction.channel
-            channel_id = interaction.channel.id
-        else:
-            channel_id = channel.id
-        perms = channel.permissions_for(interaction.user)
-        if not perms.view_channel:
-            return await interaction.response.send_message(
-                "You do not have permission to view that channel.", ephemeral=True
-            )
-        if not perms.manage_threads and show_all_private_threads and private_mode not in [PrivateMode.hide_name, PrivateMode.hide, PrivateMode.exclude]:
-            return await interaction.response.send_message(
-                "You do not have permission to view full private thread names.", ephemeral=True
-            )
-        if not await validate_guild_only(
-            interaction, "The `include_threads` options can only be used in a server."
-        ):
-            return
-        if not isinstance(channel, (TextChannel, ForumChannel)):
-            return await interaction.response.send_message(
-                "The channel must be a text channel or forum channel.", ephemeral=True
-            )
-        if isinstance(channel, ForumChannel):
-            show_all_private_threads = False
-            show_archived_private_threads = False
-        date_valid, (before_date, after_date) = await parse_date_options(
-            interaction, before_month, before_year, after_month, after_year
-        )
-        if not date_valid:
-            return
-        if not await validate_graph_options(interaction, graph_only, top_threads, "top_threads"):
-            return
-        await interaction.response.defer(thinking=True)
-        valid_private_thread_ids = set()
-        if channel.permissions_for(interaction.user).manage_threads:
-            show_all_private_threads = True
-        elif not show_all_private_threads:
-            valid_private_thread_ids |= {thread.id for thread in channel.threads if
-                                         thread.is_private() and interaction.user.id in [member.id for member in
-                                                                                         thread.members]}
-        if show_archived_private_threads and not show_all_private_threads:
-            async for thread in channel.archived_threads(private=True, limit=None, joined=not channel.permissions_for(channel.guild.me).manage_threads):
-                if interaction.user.id in [member.id for member in thread.members]:
-                    valid_private_thread_ids.add(thread.id)
-        base = (
-            Statistic.filter(channel_id=channel_id, guild_id=interaction.guild_id, thread_id__isnull=False)
-            .annotate(sum=Sum(statistic.field_name()))
-            .order_by("-sum")
-        )
-        if before_date:
-            base = base.filter(month__lte=before_date)
-        if after_date:
-            base = base.filter(month__gte=after_date)
-        if bots == BotModes.exclude:
-            base = base.filter(is_bot=False)
-        elif bots == BotModes.only:
-            base = base.filter(is_bot=True)
-        if private_mode == PrivateMode.exclude:
-            base = base.filter(is_private=False)
-        else:
-            if valid_private_thread_ids:
-                base = base.filter(Q(is_private=False) | Q(thread_id__in=valid_private_thread_ids))
-        base = base.group_by("guild_id", "channel_id", "thread_id", "is_private")
-        values = base.values(
-            "guild_id",
-            "channel_id",
-            "thread_id",
-            "is_private",
-            "sum",
-        )
-        stats = []
-        async for value in values:
-            stat = Statistic(**value)
-            stat.sum = int(value["sum"])
-            stats.append(stat)
-        if private_mode == PrivateMode.exclude:
-            stats = [stat for stat in stats if not is_private_stat(stat)]
-        total = sum([stat.sum for stat in stats])
-        buf = None
-        if top_threads > 0:
-            if private_mode == PrivateMode.hide:
-                top_threads_stats_pool = [stat for stat in stats if not is_private_stat(stat)]
-            else:
-                top_threads_stats_pool = stats
-            graph_stats = top_threads_stats_pool[:top_threads]
-            names = [
-                stat.thread.name
-                if (not is_private_stat(stat) or private_mode != PrivateMode.hide_name)
-                else "**Private Thread**"
-                for stat in graph_stats
-            ]
-            counts = [stat.sum for stat in graph_stats]
-            buf = make_bar_graph(
-                names, counts, f"{statistic.title_word()} in Threads in {channel.name}", "Thread", statistic.label()
-            )
-        assert (
-            not graph_only
-            or buf
-            # Represents "if graph only, then a graph must be made" (p->q)
-        ), "Somehow requested graph only but no graph was made."
-        has_at_least_one_private_channel = next((is_private_stat(stat) for stat in stats), None) is not None
-        if graph_only:
-            return await interaction.followup.send(
-                files=[
-                    File(
-                        buf,
-                        filename="graph.png",
-                        description="A graph of the top threads the channel has",
-                    )
-                ],
-                ephemeral=is_ephemeral(private_mode, has_at_least_one_private_channel),
-            )
-        embed = Embed(
-            title=f"Statistics for Threads in {channel.name}",
-            description=f"Total threads: **{len(stats)}**, {statistic.title_word().lower()}: **{total:,}**{' (**' + format_byte_string(total) + '**)' if statistic == StatisticMode.characters and total > 1024 else ''}\n",
-        )
-        for stat in stats[:50]:  # Limit to 50 channels listed so we do not go over the embed character limit
-            embed.description += f"**<#{stat.target_channel_id}>**: {stat.sum:,}{' (' + format_byte_string(stat.sum) + ')' if statistic == StatisticMode.characters and stat.sum > 1024 else ''}\n"
-        embed.description = embed.description.strip()
-        if buf:
-            embed.set_image(url="attachment://graph.png")
-        await interaction.followup.send(
-            embed=embed,
-            files=[
-                File(
-                    buf,
-                    filename="graph.png",
-                    description="A graph of the top threads the channel has",
-                )
-            ]
-            if buf
-            else [],
-            ephemeral=is_ephemeral(private_mode, has_at_least_one_private_channel),
-        )
+        return await ThreadsHandler(
+            interaction,
+            channel=channel,
+            top_threads=top_threads,
+            graph_only=graph_only,
+            private_mode=private_mode,
+            bots=bots,
+            before_month=before_month,
+            before_year=before_year,
+            after_month=after_month,
+            after_year=after_year,
+            statistic=statistic,
+            hidden=hidden,
+        ).run()
 
     @command(name="server_channels", description="View statistics of all channels in the server.")
     async def server_channels(
@@ -234,9 +150,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         after_year: Optional[Range[int, 2015]] = None,
         statistic: StatisticMode = StatisticMode.messages,
     ):
-        if not await validate_guild_only(
-            interaction, "The command can only be used in a server."
-        ):
+        if not await validate_guild_only(interaction, "The command can only be used in a server."):
             return
         if include_all_channels and not interaction.user.guild_permissions.administrator:
             # Only admins can view all channel's full stats
@@ -257,9 +171,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         await interaction.response.defer(thinking=True)
         valid_channel_ids = set()
         base = (
-            Statistic.filter(guild_id=interaction.guild_id)
-            .annotate(sum=Sum(statistic.field_name()))
-            .order_by("-sum")
+            Statistic.filter(guild_id=interaction.guild_id).annotate(sum=Sum(statistic.field_name())).order_by("-sum")
         )
         if before_date:
             base = base.filter(month__lte=before_date)
@@ -279,21 +191,10 @@ class StatisticsView(Group, name="view", description="View statistics informatio
             base = base.filter(channel_id__in=valid_channel_ids)
         if aggregate_threads:
             base = base.group_by("guild_id", "channel_id", "is_private")
-            values = base.values(
-                "guild_id",
-                "channel_id",
-                "sum",
-                "is_private"
-            )
+            values = base.values("guild_id", "channel_id", "sum", "is_private")
         else:
             base = base.group_by("guild_id", "channel_id", "thread_id", "is_private")
-            values = base.values(
-                "guild_id",
-                "channel_id",
-                "thread_id",
-                "sum",
-                "is_private"
-            )
+            values = base.values("guild_id", "channel_id", "thread_id", "sum", "is_private")
         stats = []
         async for value in values:
             stat = Statistic(**value)
@@ -388,9 +289,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
         after_year: Optional[Range[int, 2015]] = None,
         statistic: StatisticMode = StatisticMode.messages,
     ):
-        if not await validate_guild_only(
-                interaction, "The command can only be used in a server."
-        ):
+        if not await validate_guild_only(interaction, "The command can only be used in a server."):
             return
         date_valid, (before_date, after_date) = await parse_date_options(
             interaction, before_month, before_year, after_month, after_year
@@ -401,9 +300,7 @@ class StatisticsView(Group, name="view", description="View statistics informatio
             return
         await interaction.response.defer(thinking=True)
         base = (
-            Statistic.filter(guild_id=interaction.guild_id)
-            .annotate(sum=Sum(statistic.field_name()))
-            .order_by("-sum")
+            Statistic.filter(guild_id=interaction.guild_id).annotate(sum=Sum(statistic.field_name())).order_by("-sum")
         )
         if before_date:
             base = base.filter(month__lte=before_date)
