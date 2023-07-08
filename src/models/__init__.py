@@ -1,5 +1,6 @@
 from tortoise import Tortoise
 from .statistic import Statistic
+from .settings import ServerSettings
 
 TORTOISE_ORM = {
     "connections": {
